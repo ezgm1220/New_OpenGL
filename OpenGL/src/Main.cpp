@@ -68,7 +68,7 @@ int main() {
 
     {
         glfwInit();
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
@@ -483,9 +483,9 @@ int main() {
             show2DShader = Shader("./Shaders/Base/show2D.vs", "./Shaders/Base/show2D.fs");
             show2DShader.use();
             show2DShader.setInt("layer", 1);
-            show2DShader.setInt("depthMap", 0);
+            show2DShader.setInt("tex0", 0);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D_ARRAY, shadow.ShadowMap);
+            glBindTexture(GL_TEXTURE_2D, texture);
             renderQuad();
             break;
         }

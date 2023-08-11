@@ -183,6 +183,7 @@
     <None Include="Shaders\Shadow\CSM.vs" />
     <None Include="Shaders\Shadow\Shadow.fs" />
     <None Include="Shaders\Shadow\Shadow.vs" />
+    <None Include="Shaders\Shadow\VSSM\Test.comp" />
     <None Include="Shaders\Shadow\VSSM\SAT.comp" />
     <None Include="Shaders\Shadow\VSSM\shadow.fs" />
     <None Include="Shaders\Shadow\VSSM\shadow.vs" />

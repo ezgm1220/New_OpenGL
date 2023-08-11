@@ -172,5 +172,6 @@
     <None Include="Shaders\Base\light.vs">
       <Filter>资源文件</Filter>
     </None>
+    <None Include="Shaders\Shadow\VSSM\Test.comp" />
   </ItemGroup>
 </Project>
