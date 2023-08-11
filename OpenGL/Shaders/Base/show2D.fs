@@ -22,8 +22,11 @@ uniform int layer;
 
 void main()
 {
-	float depthValue = texture(depthMap, vec3(TexCoords, 2)).r;
-	vec3 color = texture(tex0,TexCoords).rgb;
-    FragColor = vec4(color, 1);
+	float depthValue = texture(tex0, TexCoords).r;
+	float color0 = texture(tex0,TexCoords).r;
+	float color1 = texture(tex1,TexCoords).r;
+	float color2 = texture(tex2,TexCoords).r;
+    FragColor = vec4(vec3(color2 ), 1);
+	//FragColor = vec4(vec3(color1), 1);
 	//FragColor = vec4(0.3,0.2,0.3,1.0);
 }

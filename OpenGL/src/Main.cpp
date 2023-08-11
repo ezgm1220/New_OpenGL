@@ -57,11 +57,11 @@ GLuint Gbuffer;
 GLuint gPosition, gNormal, gMaterial, gAlbedo;
 
 enum LIGHT_TYPE { POINT, DIRECTION, SPOT, AREA };
-extern enum SHADOW_TYPE { DIRECTION_LIGHT = 1, CSM };
+extern enum SHADOW_TYPE { DIRECTION_LIGHT = 1, CSM ,VSSM };
 
 // 渲染管线现选择 
 enum RENDERPATH { DEFERRED, FORWARD, SHOW2D, SHOW3D };
-RENDERPATH RenderPath = SHOW2D;
+RENDERPATH RenderPath = FORWARD;
 
 
 int main() {
@@ -194,8 +194,11 @@ int main() {
 
         // DirectionLight:
         {
-            lights.add_Direction(60, 45, glm::vec3(6));
-            shadow.Set_CSM(60, 45);
+            float theta = 45;
+            float verphi = 45;
+            lights.add_Direction(theta, verphi, glm::vec3(6));
+            shadow.Set_VSSM(theta, verphi);
+            //shadow.Set_DirectionLight(60, 45);
 
             //cout << lights.lights[0].Color.x;
         }
@@ -254,6 +257,7 @@ int main() {
         }
         case FORWARD: {
 
+            int areaLightID;
             ForwardShader.use();
             ForwardShader.setInt("albedoMap", 0);
             ForwardShader.setInt("normalMap", 1);
@@ -269,13 +273,29 @@ int main() {
             else if (shadow.type == CSM) {
                 ForwardShader.setInt("ShadowMap_CSM", 8);
             }
+            else if (shadow.type == VSSM) {
+                areaLightID = 10;
+                ForwardShader.setInt("ShadowMap", 8);
+                ForwardShader.setInt("SATMap", 9);
+            }
+
+            if (lights.Have_AreaLight) {
+                ForwardShader.setInt("LTC_1Map", areaLightID);
+                ForwardShader.setInt("LTC_2Map", areaLightID + 1);
+                AreaLightTexID = areaLightID;
+            }
 
             if (lights.Have_AreaLight) {
                 ForwardShader.setInt("LTC_1Map", 9);
                 ForwardShader.setInt("LTC_2Map", 10);
                 AreaLightTexID = 9;
             }
+
+
             break;
+
+
+
         }
         case SHOW2D: {
             show2DShader.use();
@@ -297,13 +317,13 @@ int main() {
     IBL ibl;
     string sourcepath = "C:/Users/czzzz/Desktop/HDR/";
     //ibl.Load(sourcepath + "envmap",".tga", true);
-    //ibl.Load(sourcepath + "dikhololo_night_4k", ".hdr");
-    //ibl.PrepareIBL();
+    ibl.Load(sourcepath + "dikhololo_night_4k", ".hdr");
+    ibl.PrepareIBL();
 
     // 场景中物体材质
 
-    //scene.add_Material("gold");
-    //scene.add_Material("suliao", glm::vec3(0.5, 0.5, 0.5), 0.1, 0.1);
+    scene.add_Material("gold");
+    scene.add_Material("suliao", glm::vec3(0.5, 0.5, 0.5), 0.1, 0.1);
     //Material wall("rusted_iron"), gold("gold");
 
     glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
@@ -342,6 +362,7 @@ int main() {
             shadow.Get_ShadowMap(Render_Scene);
         }
 
+        glViewport(0, 0, SCR_WIDTH, SCR_HEIGHT);
         switch (RenderPath) {
 
         case DEFERRED: {
@@ -423,7 +444,7 @@ int main() {
             if (1) {// 实时调试光照Shader
                 ForwardShader = Shader("./Shaders/Forward/Forward.vs", "./Shaders/Forward/Forward.fs");
                 ForwardShader.use();
-
+                int areaLightID = 9;
                 ForwardShader.setInt("albedoMap", 0);
                 ForwardShader.setInt("normalMap", 1);
                 ForwardShader.setInt("metallicMap", 2);
@@ -438,11 +459,16 @@ int main() {
                 else if (shadow.type == CSM) {
                     ForwardShader.setInt("ShadowMap_CSM", 8);
                 }
+                else if (shadow.type == VSSM) {
+                    areaLightID = 10;
+                    ForwardShader.setInt("ShadowMap", 8);
+                    ForwardShader.setInt("SATMap", 9);
+                }
 
                 if (lights.Have_AreaLight) {
-                    ForwardShader.setInt("LTC_1Map", 9);
-                    ForwardShader.setInt("LTC_2Map", 10);
-                    AreaLightTexID = 9;
+                    ForwardShader.setInt("LTC_1Map", areaLightID);
+                    ForwardShader.setInt("LTC_2Map", areaLightID + 1);
+                    AreaLightTexID = areaLightID;
                 }
             }
 
@@ -459,8 +485,8 @@ int main() {
             else {
                 ForwardShader.setBool("HaveAreaLight", false);
             }
-
             if (shadow._Shadow) {
+                shadow.Size_Light = 10;
                 shadow.Set_ShadowMap(ForwardShader, 8);
             }
 
@@ -482,10 +508,15 @@ int main() {
         case SHOW2D: {
             show2DShader = Shader("./Shaders/Base/show2D.vs", "./Shaders/Base/show2D.fs");
             show2DShader.use();
-            show2DShader.setInt("layer", 1);
             show2DShader.setInt("tex0", 0);
+            show2DShader.setInt("tex1", 1);
+            show2DShader.setInt("tex2", 2);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, texture);
+            glBindTexture(GL_TEXTURE_2D, shadow.ShadowMap);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, shadow.SATMap[0]);
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, shadow.SATMap[1]);
             renderQuad();
             break;
         }

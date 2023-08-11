@@ -187,6 +187,7 @@
     <None Include="Shaders\Shadow\VSSM\SAT.comp" />
     <None Include="Shaders\Shadow\VSSM\shadow.fs" />
     <None Include="Shaders\Shadow\VSSM\shadow.vs" />
+    <None Include="Shaders\Shadow\VSSM\TestSAT.comp" />
     <None Include="Shaders\Skybox\skybox.fs" />
     <None Include="Shaders\Skybox\skybox.vs" />
   </ItemGroup>

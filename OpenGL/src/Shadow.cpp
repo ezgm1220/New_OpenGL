@@ -145,25 +145,32 @@ void Shadow::Set_VSSM(float theta, float varphi, float r) {
 
 		shader = Shader("./Shaders/Shadow/VSSM/shadow.vs", "./Shaders/Shadow/VSSM/shadow.fs");
 		satShader = Shader("./Shaders/Shadow/VSSM/SAT.comp");
+		glGenFramebuffers(1, &depthMapFBO);
 		// 创建纹理
 		glGenTextures(1, &ShadowMap);
 		glBindTexture(GL_TEXTURE_2D, ShadowMap);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, MapSize, MapSize, 0, GL_RG, GL_FLOAT, NULL);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, MapSize, MapSize, 0, GL_RG, GL_FLOAT, nullptr);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR); //GL_TEXTURE_MIN_FILTER
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); //GL_TEXTURE_MAG_FILTER
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); //GL_TEXTURE_WRAP_S
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); //GL_TEXTURE_WRAP_T
-		float bordercolor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-		glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, bordercolor);
-		// 配置缓冲区
-		glGenFramebuffers(1, &depthMapFBO);
+		float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+		//创建深度缓冲
+		unsigned int depthBuffer;
+		glGenRenderbuffers(1, &depthBuffer);
+		glBindRenderbuffer(GL_RENDERBUFFER, depthBuffer);
+		glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT32, MapSize, MapSize);
+		//链接纹理和附件
 		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, ShadowMap, 0);
-		glDrawBuffer(GL_NONE);
-		glReadBuffer(GL_NONE);
+		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, ShadowMap, 0);
+		glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthBuffer);
+		//glDrawBuffer(GL_NONE);
+		//glReadBuffer(GL_NONE);
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		glBindTexture(GL_TEXTURE_2D, 0);
+		glBindRenderbuffer(GL_RENDERBUFFER, 0);
 
-		// 创建SAT纹理
 		glGenFramebuffers(2, SATFBO);
 		glGenTextures(2, SATMap);
 
@@ -179,8 +186,7 @@ void Shadow::Set_VSSM(float theta, float varphi, float r) {
 		}
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, bordercolor);
-
+		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 		SHADER = false;
 	}
 
@@ -255,24 +261,29 @@ void Shadow::Get_ShadowMap(void(Scene::* p)(Shader&, bool)) {
 		// 获取ShadowMap
 		{
 			glm::mat4 view, projection;
-			float near_plane = cameraNearPlane, far_plane = cameraFarPlane;
+			float near_plane = 0.1f, far_plane = 100;
 
 			view = glm::lookAt(Postion, Center, glm::vec3(0, 1, 0));
 			projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
+			/*view = camera.GetViewMatrix();
+			projection = glm::ortho(-1.0f, 1.0f, -1.0f, 1.0f, near_plane, far_plane);*/
 
 			LightSpace = projection * view;
 
 			shader.use();
+
+			glViewport(0, 0, MapSize, MapSize);
 			glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+			glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 			shader.setMat4("lightSpace", LightSpace);
 			glm::mat4 model = glm::mat4(1.0);
 			shader.setMat4("model", model);
 
-			glViewport(0, 0, MapSize, MapSize);
-
-			glClear(GL_DEPTH_BUFFER_BIT);
 			glCullFace(GL_FRONT);
 			(scene.*p)(shader, true);
+			//renderCube();
 			glCullFace(GL_BACK);
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);
 		}
@@ -297,6 +308,7 @@ void Shadow::Set_ShadowMap(Shader& shader, int id) {
 		shader.setInt("Shadow_type", (int)type);
 		shader.setMat4("LightSpace", LightSpace);
 		shader.setVec3("ShadowDirection", Direction);
+		shader.setBool("HaveShadow", true);
 		glActiveTexture(GL_TEXTURE0 + id);
 		glBindTexture(GL_TEXTURE_2D, ShadowMap);
 	}
@@ -312,6 +324,19 @@ void Shadow::Set_ShadowMap(Shader& shader, int id) {
 		shader.setFloat("farPlane", cameraFarPlane);
 		glActiveTexture(GL_TEXTURE0 + id);
 		glBindTexture(GL_TEXTURE_2D_ARRAY, ShadowMap);
+	}
+	if (type == VSSM) {
+		shader.setInt("Shadow_type", (int)type);
+		shader.setVec3("ShadowDirection", Direction);
+		shader.setBool("HaveShadow", true);
+		shader.setMat4("LightSpace", LightSpace);
+		shader.setInt("Size_ShadowMap", MapSize);
+		shader.setInt("Size_Light", Size_Light);
+		glActiveTexture(GL_TEXTURE0 + id);
+		glBindTexture(GL_TEXTURE_2D, ShadowMap);
+		glActiveTexture(GL_TEXTURE0 + id + 1);
+		glBindTexture(GL_TEXTURE_2D, SATMap[1]);
+
 	}
 }
 

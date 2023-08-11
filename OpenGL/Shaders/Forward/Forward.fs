@@ -40,6 +40,10 @@ uniform float cascadePlaneDistances[16];
 uniform int cascadeCount; 
 uniform mat4 view;
 uniform float farPlane;
+// shadow-VSSM
+uniform sampler2D SATMap;
+uniform int Size_ShadowMap;
+uniform int Size_Light;
 
 //  没有纹理时的材质信息
 uniform vec3 _Albedo;
@@ -94,8 +98,14 @@ float Vis_Smith( float a2, float NoV, float NoL );
 vec3 F_Schlick( vec3 SpecularColor, float VoH );
 vec3 fresnelSchlickRoughness( vec3 SpecularColor, float VoH, float roughness );
 vec3 getNormalFromMap();
+
+// Shadow:
 float getShadow(vec3 N, vec3 L);
 float getShadow_CSM(vec3 N, vec3 L);
+float getShadow_VSSM(vec3 N, vec3 L);
+vec4 getSAT(float wPenumbra, vec3 projCoords);
+float chebyshev(vec2 moments, float currentDepth);
+
 
 vec3 get_BRDF(vec3 N, vec3 L, vec3 H,vec3 V, vec3 F0,vec3 albedo, float roughness, float metallic);
 
@@ -173,6 +183,7 @@ void main(){
         }
         else if(lights[i].type == 1){
             radiance = DirectionLight(i,N);
+            
             L = -lights[i].Direction;
             H = normalize(V + L);
             vec3 brdf = get_BRDF(N, L, H, V, F0, albedo, roughness, metallic);
@@ -237,6 +248,10 @@ void main(){
         shadow = getShadow_CSM(N,ShadowDirection);
         shadow = (1.0 - shadow);
     }
+    else if(Shadow_type == 3){
+        shadow = getShadow_VSSM(N,ShadowDirection);
+        //shadow = (1.0 - shadow);
+    }
     else{
        shadow = 1.0;
     }
@@ -245,26 +260,13 @@ void main(){
 
     
     color =  ambient + (Lo - DirLo) + DirLo * shadow;
-    //color = DirLo;
+    //color = vec3(shadow);
+    //color = vec3( getShadow_VSSM(N,ShadowDirection) );
+    //color = vec3(texture(SATMap,TexCoords).r / 10000);
+    //color = LightPos.rgb;
     //color =  vec3(getShadow_CSM(N,ShadowDirection));
     //=color = ambient;
-
-    vec4 fragPosViewSpace = view * vec4(WorldPos, 1.0); // 转换到相机视角中
-    float depthValue = abs(fragPosViewSpace.z); 
-
-    int layer = -1;// 分5级 0-4
-    for (int i = 0; i < cascadeCount; ++i)
-    {
-        if (depthValue < cascadePlaneDistances[i])
-        {
-            layer = i;
-            break;
-        }
-    }
-    if (layer == -1)
-    {
-        layer = cascadeCount;
-    }
+    //color = vec3(Shadow_type - 2);
 
     //color = vec3((layer*1.0) / cascadeCount);
 
@@ -602,4 +604,90 @@ float getShadow_CSM(vec3 N, vec3 L){
     float closestDepth = texture(ShadowMap, projCoords.xy).r; 
 
     return shadow ;
+}
+
+float getShadow_VSSM(vec3 N, vec3 L){
+    float shadow;
+
+    float bias = max(0.05 * (1.0 - max(dot(N, -L),0)), 0.001);
+
+    vec3 projCoords = LightPos.xyz / LightPos.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    float currentDepth = projCoords.z  - bias ;
+    if(currentDepth > 1.0){
+        return 1.0;
+    }
+
+
+    float blockerSearchSize = Size_Light/2.0f;
+    float border = blockerSearchSize / Size_ShadowMap;
+    // 没搞懂为什么要这样判断
+    if (projCoords.x <= border || projCoords.x >= 0.99f - border){
+		return 1.0;
+	}
+	if (projCoords.y <= border || projCoords.y >= 0.99f - border) {
+		return 1.0;
+	}
+
+    // 获取平均深度:
+    vec4 moments = getSAT(float(blockerSearchSize), projCoords);
+    float averageDepth = moments.x;
+	float alpha = chebyshev(moments.xy, currentDepth); // 计算出了大于currentDepth的百分比 (N1/N)
+    // 将大于currentDepth的深度平均值近似成currentDepth,然后近似求解出小于currentDepth也就是被遮挡的平均深度
+	float dBlocker = (averageDepth - alpha * (currentDepth - bias)) / (1.0 - alpha);
+
+    //return averageDepth;
+
+    if (dBlocker < 0.001) {
+        // awds
+		return 0.0;
+	}
+	if (dBlocker > 1.0) {
+		return 1.0;
+	}
+	float wPenumbra = (currentDepth - dBlocker) * Size_Light / dBlocker;// 通过相似三角形求出采样范围
+	if (wPenumbra <= 0.0) {
+		return 1.0;
+	}
+	moments = getSAT(wPenumbra, projCoords);// 在采样范围内去求平均值
+	if (currentDepth <= moments.x) { // 确保在正态分布的右边
+		return 1.0;
+	}
+	// CDF estimation
+	shadow = chebyshev(moments.xy, currentDepth);// 再次通过切比雪夫估算出shadow
+    
+    return shadow;
+}
+vec4 getSAT(float wPenumbra, vec3 projCoords){
+    // wPenumbra 灯面的长度
+	vec2 stride = 1.0 / vec2(Size_ShadowMap);
+
+	float xmax = projCoords.x + wPenumbra * stride.x;
+	float xmin = projCoords.x - wPenumbra * stride.x;
+	float ymax = projCoords.y + wPenumbra * stride.y;
+	float ymin = projCoords.y - wPenumbra * stride.y;
+
+	vec4 A = texture(SATMap, vec2(xmin, ymin));
+	vec4 B = texture(SATMap, vec2(xmax, ymin));
+	vec4 C = texture(SATMap, vec2(xmin, ymax));
+	vec4 D = texture(SATMap, vec2(xmax, ymax));
+
+	float sPenumbra = 2.0 * wPenumbra;
+
+	vec4 moments = (D + A - B - C) / float(sPenumbra * sPenumbra);
+
+
+	return moments;
+}
+float chebyshev(vec2 moments, float currentDepth){
+    if (currentDepth <= moments.x) {
+		return 1.0;
+	}
+	// calculate variance from mean.
+	float variance = moments.y - (moments.x * moments.x);
+	variance = max(variance, 0.0001);
+	float d = currentDepth - moments.x;
+	float p_max = variance / (variance + d * d);
+	return p_max;
 }

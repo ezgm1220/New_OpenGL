@@ -35,13 +35,14 @@ public:
 	float lambda = 0.5;
 	int cascadeCount;
 	int depthMapResolution = 4096;
-	//PCSS
+	//VSSM
 	Shader satShader;
+	int Size_Light;
 
 	Shadow();
 	void Set_DirectionLight(float theta, float varphi, float r =10);
 	void Set_CSM(float theta, float varphi, int cascadeCount = 5);
-	void Set_VSSM(float theta, float varphi, float r = 25);
+	void Set_VSSM(float theta, float varphi, float r = 10);
 
 	std::vector<glm::mat4> getCSMLightSpace();
 	glm::mat4 getLightSpaceMatrix(const float nearPlane, const float farPlane);
